@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+    <title>LTC6811 Örnek Uygulamalar</title>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>LTC6811V1R2C BMS Kütüphanesi</h1>
+            <nav>
+                <ul>
+                    <li><a href="index.html">Ana Sayfa</a></li>
+                    <li><a href="examples.html" class="active">Örnekler</a></li>
+                    <li><a href="reference.html">Referans</a></li>
+                    <li><a href="setup.html">Kurulum</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="page-header">
+            <h2>Örnek Uygulamalar</h2>
+            <p>LTC6811 için pratik kullanım örnekleri ve kod parçaları</p>
+        </section>
+
+        <section class="examples-grid">
+            <div class="example-card">
+                <h3>1. Aşırı/Düşük Gerilim Kontrolü</h3>
+                <p>Pil hücrelerinin voltajlarının güvenli aralıkta kalmasını sağlayan sistem</p>
+                <a href="#voltage-monitoring" class="btn">Kodu Görüntüle</a>
+            </div>
+            <div class="example-card">
+                <h3>2. Harici Sıcaklık Sensörü</h3>
+                <p>GPIO pinleri üzerinden NTC sensörleriyle sıcaklık ölçümü</p>
+                <a href="#temperature-sensing" class="btn">Kodu Görüntüle</a>
+            </div>
+            <div class="example-card">
+                <h3>3. ADC Modları Kullanımı</h3>
+                <p>Farklı ADC modlarının performans ve hassasiyet karşılaştırması</p>
+                <a href="#adc-modes" class="btn">Kodu Görüntüle</a>
+            </div>
+            <div class="example-card">
+                <h3>4. Açık Kablo Tespiti</h3>
+                <p>ADOW komutu kullanarak kopuk bağlantıların tespiti</p>
+                <a href="#open-wire" class="btn">Kodu Görüntüle</a>
+            </div>
+            <div class="example-card">
+                <h3>5. Güç Tasarrufu Modu</h3>
+                <p>Enerji verimliliği için farklı güç modları arasında geçiş</p>
+                <a href="#power-management" class="btn">Kodu Görüntüle</a>
+            </div>
+            <div class="example-card">
+                <h3>6. Hata Teşhisi ve Raporlama</h3>
+                <p>BMS durumunun izlenmesi ve hata teşhisi</p>
+                <a href="#diagnostics" class="btn">Kodu Görüntüle</a>
+            </div>
+        </section>
+
+        <section id="voltage-monitoring" class="example-section">
+            <h2>Aşırı/Düşük Gerilim Kontrolü</h2>
+            <p>Bu örnek, LTC6811'in status register'larını kullanarak aşırı ve düşük gerilim durumlarını tespit eder ve buna göre işlem yapar.</p>
+            <pre class="code-block">
+/* ovuv_monitoring.c - Aşırı/Düşük Gerilim İzleme */
+
+// Voltaj Limitleri (V)
+#define CELL_OV_THRESHOLD  4.20f
+#define CELL_UV_THRESHOLD  3.00f
+#define HYSTERESIS         0.05f
+
+// Durum Bayrakları
+#define STATUS_OK          0
+#define STATUS_UNDERVOLTAGE 1
+#define STATUS_OVERVOLTAGE  2
+
+typedef struct {
+    uint8_t cell_status[12];  // Her hücre için durum kodu
+    uint8_t pack_status;      // Pil paketi genel durumu
+} battery_status_t;
+
+battery_status_t batt_status = {0};
+
+// Voltaj limitleri ayarlama fonksiyonu
+void configureCellVoltageMonitoring(cell_asic_ *ic) {
+    setVoltageThresholds(ic, CELL_UV_THRESHOLD, CELL_OV_THRESHOLD);
+    createConfigA(ic);
+    ltcWakeUp(1);
+    spiWriteData(ic->ic_address, WRCFGA, ic->ic_register.tx_data);
+}
+
+// Voltaj durumunu kontrol et
+void checkCellVoltageStatus(cell_asic_ *ic) {
+    uint8_t uv_flag = 0, ov_flag = 0;
+    uint8_t pecError = 0;
+    
+    // StatusB register oku
+    ltcWakeUp(1);
+    spiReadData(ic->ic_address, RDSTATB, ic->ic_register.rx_data, 
+                ic->ic_register.rx_pec, &pecError, 8);
+    
+    if (pecError == 0) {
+        parseStatus(ic, B, ic->ic_register.rx_data);
+        
+        // Hücre durumları için UV ve OV bayraklarını kontrol et
+        for (uint8_t i = 0; i < 12; i++) {
+            if (ic->statb.c_uv[i*2]) {
+                batt_status.cell_status[i] |= STATUS_UNDERVOLTAGE;
+                uv_flag = 1;
+            }
+            if (ic->statb.c_uv[i*2+1]) {
+                batt_status.cell_status[i] |= STATUS_OVERVOLTAGE;
+                ov_flag = 1;
+            }
+        }
+        
+        // Paket durumunu güncelle
+        if (uv_flag) batt_status.pack_status |= STATUS_UNDERVOLTAGE;
+        if (ov_flag) batt_status.pack_status |= STATUS_OVERVOLTAGE;
+    }
+}
+
+// Durum bazlı koruma işlemleri
+void cellVoltageProtection(void) {
+    if (batt_status.pack_status & STATUS_OVERVOLTAGE) {
+        // Şarjı durdur
+        CHARGE_DISABLE();
+    } else if (batt_status.pack_status & STATUS_UNDERVOLTAGE) {
+        // Deşarjı durdur
+        DISCHARGE_DISABLE();
+    } else {
+        // Normal çalışma
+        NORMAL_OPERATION();
+    }
+}
+
+// Ana izleme döngüsü
+void monitorBatteryVoltage(void) {
+    // LTC6811 cihazını yapılandır
+    cell_asic_ bms_ic;
+    bms_ic.ic_address = 0x00;
+    
+    // Voltaj limitlerini ayarla
+    configureCellVoltageMonitoring(&bms_ic);
+    
+    // ADC dönüşümünü başlat
+    ltcADCV(bms_ic.ic_address, ADC_7_KHZ, DCP_DISABLED, CH_ALL);
+    ltcPollAdc(bms_ic.ic_address);
+    
+    // Status ölçümü başlat
+    startStatusMeasurement(bms_ic.ic_address, ADC_7_KHZ, CHST_ALL);
+    ltcPollAdc(bms_ic.ic_address);
+    
+    // Voltaj durumunu kontrol et
+    checkCellVoltageStatus(&bms_ic);
+    
+    // Koruma işlemlerini yürüt
+    cellVoltageProtection();
+}
+            </pre>
+        </section>
+
+        <section id="temperature-sensing" class="example-section">
+            <h2>Harici Sıcaklık Sensörü Okuma</h2>
+            <p>GPIO pinlerine bağlı NTC termistörleri kullanarak sıcaklık ölçümü yapar.</p>
+            <pre class="code-block">
+/* temperature_sensing.c - Harici Sıcaklık Sensörü Okuma */
+
+// NTC Termistör Parametreleri
+#define NTC_R25       10000.0f   // 25°C'de direnç değeri (Ohm)
+#define NTC_BETA      3950.0f    // Beta değeri
+#define NTC_T0        298.15f    // Kelvin olarak referans sıcaklık (25°C)
+#define SERIES_R      10000.0f   // Seri direnç değeri (Ohm)
+
+// Sıcaklık Limitleri (°C)
+#define TEMP_MAX      60.0f
+#define TEMP_MIN      0.0f
+
+// Makrolar
+#define KELVIN_TO_CELSIUS(k) ((k) - 273.15f)
+#define CELSIUS_TO_KELVIN(c) ((c) + 273.15f)
+
+typedef struct {
+    float temperatures[5];  // 5 GPIO pini için sıcaklık değerleri
+    uint8_t status;         // 0: Normal, 1: High Temp, 2: Low Temp
+} temp_data_t;
+
+temp_data_t temp_data = {0};
+
+// GPIO pinlerini sıcaklık ölçümü için yapılandır
+void configureTemperatureSensing(cell_asic_ *ic) {
+    // GPIO pinlerini analog giriş olarak ayarla (Pulldown kapalı)
+    setAllGPIO(ic, 0x1F);  // Tüm GPIO pinleri aktif
+    createConfigA(ic);
+    ltcWakeUp(1);
+    spiWriteData(ic->ic_address, WRCFGA, ic->ic_register.tx_data);
+}
+
+// ADC değerinden sıcaklık hesaplama
+float calculateTemperature(uint16_t adc_value) {
+    float voltage_ratio, ntc_resistance, temperature;
+    
+    // ADC değerini voltaja çevir (100uV/bit)
+    float adc_voltage = adc_value * 0.0001f;
+    
+    // VREF2 = 3.0V olduğunu varsayalım
+    float ref_voltage = 3.0f;
+    
+    // Gerilim bölücü formulü: Vout = Vref * (R_NTC / (R_NTC + R_series))
+    // Buradan R_NTC hesabı:
+    voltage_ratio = adc_voltage / ref_voltage;
+    ntc_resistance = SERIES_R * voltage_ratio / (1.0f - voltage_ratio);
+    
+    // Beta formülü ile sıcaklık hesabı
+    // 1/T = 1/T0 + (1/B) * ln(R/R0)
+    temperature = 1.0f / (1.0f / NTC_T0 + (1.0f / NTC_BETA) * 
+                  logf(ntc_resistance / NTC_R25));
+    
+    return KELVIN_TO_CELSIUS(temperature);
+}
+
+// GPIO değerlerini oku ve sıcaklık hesapla
+void readTemperatures(cell_asic_ *ic) {
+    // GPIO ölçümünü başlat
+    ltcADAX(ic->ic_address, ADC_7_KHZ, GPIO_1_5_2REF);
+    ltcPollAdc(ic->ic_address);
+    
+    // GPIO değerlerini oku
+    uint8_t pecError = 0;
+    ltcWakeUp(1);
+    
+    // AUXA okuma (GPIO1-3)
+    spiReadData(ic->ic_address, RDCAUXA, ic->ic_register.rx_data, 
+                ic->ic_register.rx_pec, &pecError, 8);
+    parseAuxVoltage(ic, A, ic->ic_register.rx_data);
+    
+    // AUXB okuma (GPIO4-5, VREF2)
+    spiReadData(ic->ic_address, RDCAUXB, ic->ic_register.rx_data, 
+                ic->ic_register.rx_pec, &pecError, 8);
+    parseAuxVoltage(ic, B, ic->ic_register.rx_data);
+    
+    // Sıcaklıkları hesapla
+    temp_data.status = 0;
+    for (uint8_t i = 0; i < 5; i++) {
+        temp_data.temperatures[i] = calculateTemperature(ic->aux.a_code[i]);
+        
+        // Sıcaklık limitlerini kontrol et
+        if (temp_data.temperatures[i] > TEMP_MAX) {
+            temp_data.status = 1;  // Yüksek sıcaklık
+        } else if (temp_data.temperatures[i] < TEMP_MIN) {
+            temp_data.status = 2;  // Düşük sıcaklık
+        }
+    }
+}
+
+// Sıcaklık durumuna göre işlem yap
+void temperatureProtection(void) {
+    switch (temp_data.status) {
+        case 1:  // Yüksek sıcaklık
+            // Soğutma sistemini aktifleştir
+            ACTIVATE_COOLING();
+            // Şarj akımını sınırla
+            LIMIT_CHARGE_CURRENT();
+            break;
+        case 2:  // Düşük sıcaklık
+            // Isıtma sistemini aktifleştir
+            ACTIVATE_HEATING();
+            // Deşarj akımını sınırla
+            LIMIT_DISCHARGE_CURRENT();
+            break;
+        default:  // Normal sıcaklık
+            // Normal çalışma
+            NORMAL_OPERATION();
+    }
+}
+
+// Ana sıcaklık izleme döngüsü
+void monitorTemperature(void) {
+    cell_asic_ bms_ic;
+    bms_ic.ic_address = 0x00;
+    
+    // GPIO pinlerini yapılandır
+    configureTemperatureSensing(&bms_ic);
+    
+    // Sıcaklıkları oku
+    readTemperatures(&bms_ic);
+    
+    // Sıcaklık durumuna göre işlem yap
+    temperatureProtection();
+}
+            </pre>
+        </section>
+
+        <section id="adc-modes" class="example-section">
+            <h2>Farklı ADC Modları Kullanımı</h2>
+            <p>Sistem koşullarına göre en uygun ADC modunu seçen bir örnek.</p>
+            <pre class="code-block">
+/* adc_modes.c - Farklı ADC Modlarının Kullanımı */
+
+// ADC Modları
+typedef enum {
+    ADC_MODE_FAST = 0,    // 27kHz ADC_OPT=0 veya 14kHz ADC_OPT=1
+    ADC_MODE_NORMAL,      // 7kHz ADC_OPT=0 veya 3kHz ADC_OPT=1
+    ADC_MODE_FILTERED     // 26Hz ADC_OPT=0 veya 2kHz ADC_OPT=1
+} adc_mode_t;
+
+// Sistem durumu
+typedef enum {
+    SYSTEM_IDLE,          // Bekleme durumu
+    SYSTEM_ACTIVE,        // Normal çalışma
+    SYSTEM_BALANCING,     // Dengeleme
+    SYSTEM_HIGH_NOISE     // Yüksek gürültü ortamı
+} system_state_t;
+
+// ADC ölçüm sonuçları
+typedef struct {
+    uint16_t cell_voltages[12];
+    uint16_t gpio_readings[5];
+    uint16_t internal_params[4];  // SC, ITMP, VA, VD
+    uint8_t conversion_time_ms;
+    uint8_t mode_used;
+} adc_results_t;
+
+adc_results_t adc_data = {0};
+system_state_t current_system_state = SYSTEM_IDLE;
+
+// Sistem durumuna göre en uygun ADC modunu seç
+MD selectAdcMode(system_state_t state) {
+    switch (state) {
+        case SYSTEM_IDLE:
+            return ADC_26_HZ;  // En düşük güç tüketimi
+        
+        case SYSTEM_ACTIVE:
+            return ADC_7_KHZ;  // Normal hassasiyet/hız dengesi
+        
+        case SYSTEM_BALANCING:
+            return ADC_27_KHZ; // Hızlı ölçüm (dengeleme sırasında voltajlar hızlı değişebilir)
+        
+        case SYSTEM_HIGH_NOISE:
+            return ADC_26_HZ;  // Maksimum gürültü reddi
+        
+        default:
+            return ADC_7_KHZ;  // Varsayılan mod
+    }
+}
+
+// ADC parametrelerini yapılandır
+void configureAdc(cell_asic_ *ic, uint8_t adc_option) {
+    // ADC opsiyonunu ayarla (0: Normal mod, 1: Alternatif mod)
+    setCofA_ADCOPT(ic, adc_option);
+    createConfigA(ic);
+    ltcWakeUp(1);
+    spiWriteData(ic->ic_address, WRCFGA, ic->ic_register.tx_data);
+}
+
+// Hücre voltajlarını ölç (seçilen moda göre)
+void measureCellVoltages(cell_asic_ *ic, MD mode) {
+    uint32_t start_time = GET_CURRENT_MS();
+    
+    // ADC dönüşümünü başlat
+    ltcADCV(ic->ic_address, mode, DCP_DISABLED, CH_ALL);
+    ltcPollAdc(ic->ic_address);
+    
+    // Ölçüm sonuçlarını oku
+    ltcWakeUp(1);
+    
+    uint8_t pecError = 0;
+    for (uint8_t group = A; group <= D; group++) {
+        uint8_t cmd[2];
+        
+        // Grup için uygun komutu seç
+        switch (group) {
+            case A: cmd[0] = RDCVA[0]; cmd[1] = RDCVA[1]; break;
+            case B: cmd[0] = RDCVB[0]; cmd[1] = RDCVB[1]; break;
+            case C: cmd[0] = RDCVC[0]; cmd[1] = RDCVC[1]; break;
+            case D: cmd[0] = RDCVD[0]; cmd[1] = RDCVD[1]; break;
+            default: continue;
+        }
+        
+        // Veriyi oku ve işle
+        spiReadData(ic->ic_address, cmd, ic->ic_register.rx_data, 
+                    ic->ic_register.rx_pec, &pecError, 8);
+        parseCellVoltage(ic, group, ic->ic_register.rx_data);
+    }
+    
+    // Dönüşüm süresini hesapla
+    adc_data.conversion_time_ms = GET_CURRENT_MS() - start_time;
+    
+    // Sonuçları kaydet
+    for (uint8_t i = 0; i < 12; i++) {
+        adc_data.cell_voltages[i] = ic->cell.c_code[i];
+    }
+    
+    // Kullanılan mod bilgisini kaydet
+    switch (mode) {
+        case ADC_27_KHZ: adc_data.mode_used = ADC_MODE_FAST; break;
+        case ADC_7_KHZ:  adc_data.mode_used = ADC_MODE_NORMAL; break;
+        case ADC_26_HZ:  adc_data.mode_used = ADC_MODE_FILTERED; break;
+        default:         adc_data.mode_used = ADC_MODE_NORMAL; break;
+    }
+}
+
+// Yüksek gürültü tespiti
+uint8_t detectHighNoise(cell_asic_ *ic) {
+    // Hızlı ve normal modda ölçüm yap ve sonuçları karşılaştır
+    // Büyük fark varsa, ortam gürültülü demektir
+    
+    // İlk ölçüm (Hızlı mod)
+    measureCellVoltages(ic, ADC_27_KHZ);
+    uint16_t fast_readings[12];
+    for (uint8_t i = 0; i < 12; i++) {
+        fast_readings[i] = adc_data.cell_voltages[i];
+    }
+    
+    // İkinci ölçüm (Normal mod)
+    measureCellVoltages(ic, ADC_7_KHZ);
+    
+    // Sonuçları karşılaştır
+    uint8_t high_noise_detected = 0;
+    for (uint8_t i = 0; i < 12; i++) {
+        // Hızlı mod ve normal mod arasında 5mV'den fazla fark varsa
+        if (ABS_DIFF(fast_readings[i], adc_data.cell_voltages[i]) > 50) {
+            high_noise_detected = 1;
+            break;
+        }
+    }
+    
+    return high_noise_detected;
+}
+
+// Ana ölçüm döngüsü
+void performAdaptiveAdcMeasurement(void) {
+    cell_asic_ bms_ic;
+    bms_ic.ic_address = 0x00;
+    
+    // ADC'yi yapılandır (ADC opsiyon biti 0)
+    configureAdc(&bms_ic, 0);
+    
+    // Ortam gürültüsünü tespit et
+    if (detectHighNoise(&bms_ic)) {
+        current_system_state = SYSTEM_HIGH_NOISE;
+    }
+    
+    // Uygun modu seçerek ölçüm yap
+    MD selected_mode = selectAdcMode(current_system_state);
+    measureCellVoltages(&bms_ic, selected_mode);
+}
+            </pre>
+        </section>
+
+        <section id="open-wire" class="example-section">
+            <h2>Açık Kablo Tespiti</h2>
+            <p>Pil bağlantılarında açık kablo (kopuk bağlantı) tespiti için ADOW komutunu kullanır.</p>
+            <pre class="code-block">
+/* open_wire_detection.c - Açık Kablo Tespiti */
+
+// Açık Kablo Tespiti için Parametreler
+#define OW_THRESHOLD     400     // Açık kablo tespiti için eşik değeri (mV)
+#define NUM_CELLS        12      // Hücre sayısı
+
+// Açık kablo durumu
+typedef struct {
+    uint8_t open_wire[13];       // C0 - C12 pinleri için açık kablo bayrağı
+    uint16_t pull_up[12];        // Pull-up ölçüm sonuçları
+    uint16_t pull_down[12];      // Pull-down ölçüm sonuçları
+    int16_t delta[12];           // İki ölçüm arasındaki fark
+} open_wire_data_t;
+
+open_wire_data_t ow_data = {0};
+
+// Açık kablo tespiti
+void detectOpenWires(cell_asic_ *ic) {
+    uint8_t pecError = 0;
+    
+    // 1. Pull-Up ölçümü (PUP = 1)
+    ltcADOW(ic->ic_address, ADC_7_KHZ, PULL_UP, CH_ALL);
+    ltcPollAdc(ic->ic_address);
+    
+    // Sonuçları oku
+    for (uint8_t group = A; group <= D; group++) {
+        uint8_t cmd[2];
+        
+        // Grup için uygun komutu seç
+        switch (group) {
+            case A: cmd[0] = RDCVA[0]; cmd[1] = RDCVA[1]; break;
+            case B: cmd[0] = RDCVB[0]; cmd[1] = RDCVB[1]; break;
+            case C: cmd[0] = RDCVC[0]; cmd[1] = RDCVC[1]; break;
+            case D: cmd[0] = RDCVD[0]; cmd[1] = RDCVD[1]; break;
+            default: continue;
+        }
+        
+        // Veriyi oku ve işle
+        spiReadData(ic->ic_address, cmd, ic->ic_register.rx_data, 
+                    ic->ic_register.rx_pec, &pecError, 8);
+        parseCellVoltage(ic, group, ic->ic_register.rx_data);
+    }
+    
+    // Pull-Up sonuçlarını kaydet
+    for (uint8_t i = 0; i < NUM_CELLS; i++) {
+        ow_data.pull_up[i] = ic->cell.c_code[i];
+    }
+    
+    // 2. Pull-Down ölçümü (PUP = 0)
+    ltcADOW(ic->ic_address, ADC_7_KHZ, PULL_DOWN, CH_ALL);
+    ltcPollAdc(ic->ic_address);
+    
+    // Sonuçları oku
+    for (uint8_t group = A; group <= D; group++) {
+        uint8_t cmd[2];
+        
+        // Grup için uygun komutu seç
+        switch (group) {
+            case A: cmd[0] = RDCVA[0]; cmd[1] = RDCVA[1]; break;
+            case B: cmd[0] = RDCVB[0]; cmd[1] = RDCVB[1]; break;
+            case C: cmd[0] = RDCVC[0]; cmd[1] = RDCVC[1]; break;
+            case D: cmd[0] = RDCVD[0]; cmd[1] = RDCVD[1]; break;
+            default: continue;
+        }
+        
+        // Veriyi oku ve işle
+        spiReadData(ic->ic_address, cmd, ic->ic_register.rx_data, 
+                    ic->ic_register.rx_pec, &pecError, 8);
+        parseCellVoltage(ic, group, ic->ic_register.rx_data);
+    }
+    
+    // Pull-Down sonuçlarını kaydet
+    for (uint8_t i = 0; i < NUM_CELLS; i++) {
+        ow_data.pull_down[i] = ic->cell.c_code[i];
+    }
+    
+    // 3. Açık kablo tespiti için farkları hesapla
+    for (uint8_t i = 0; i < NUM_CELLS; i++) {
+        ow_data.delta[i] = (int16_t)ow_data.pull_up[i] - (int16_t)ow_data.pull_down[i];
+    }
+    
+    // 4. Açık kabloları tespit et
+    // Tüm açık kablo bayraklarını temizle
+    for (uint8_t i = 0; i <= NUM_CELLS; i++) {
+        ow_data.open_wire[i] = 0;
+    }
+    
+    // C0 pini kontrolü (Cell1 pull_up değeri 0 ise)
+    if (ow_data.pull_up[0] == 0) {
+        ow_data.open_wire[0] = 1;
+    }
+    
+    // C1-C11 pinleri kontrolü
+    for (uint8_t i = 1; i < NUM_CELLS; i++) {
+        if (ow_data.delta[i] < -OW_THRESHOLD) {
+            ow_data.open_wire[i] = 1;
+        }
+    }
+    
+    // C12 pini kontrolü (Cell12 pull_down değeri 0 ise)
+    if (ow_data.pull_down[NUM_CELLS-1] == 0) {
+        ow_data.open_wire[NUM_CELLS] = 1;
+    }
+}
+
+// Açık kablo tespit sonuçlarını işle
+void processOpenWireResults(void) {
+    uint8_t open_wire_detected = 0;
+    
+    // Açık kablo var mı kontrol et
+    for (uint8_t i = 0; i <= NUM_CELLS; i++) {
+        if (ow_data.open_wire[i]) {
+            open_wire_detected = 1;
+            REPORT_OPEN_WIRE(i);  // Açık kablo raporlama
+        }
+    }
+    
+    if (open_wire_detected) {
+        // Güvenli moda geç
+        ENTER_SAFE_MODE();
+    }
+}
+
+// Ana açık kablo tespit döngüsü
+void performOpenWireDetection(void) {
+    cell_asic_ bms_ic;
+    bms_ic.ic_address = 0x00;
+    
+    // Açık kabloları tespit et
+    detectOpenWires(&bms_ic);
+    
+    // Sonuçları işle
+    processOpenWireResults();
+}
+            </pre>
+        </section>
+
+        <section id="power-management" class="example-section">
+            <h2>Güç Tasarrufu Modu Yönetimi</h2>
+            <p>BMS'in güç tüketimini optimize etmek için farklı güç durumları arasında geçiş yapan bir örnek.</p>
+            <pre class="code-block">
+/* power_management.c - Güç Tasarrufu Modu Yönetimi */
+
+// Güç Modu Tanımlamaları
+typedef enum {
+    POWER_MODE_SLEEP,     // En düşük güç tüketimi
+    POWER_MODE_STANDBY,   // Referanslar kapalı, hızlı uyanma
+    POWER_MODE_READY,     // Referanslar açık, hızlı ölçüm
+    POWER_MODE_MEASURE    // Aktif ölçüm
+} power_mode_t;
+
+// Ölçüm Sıklığı Durumları
+typedef enum {
+    MEAS_FREQ_SLOW,       // Düşük sıklık (örn. 10 saniye)
+    MEAS_FREQ_MEDIUM,     // Orta sıklık (örn. 1 saniye)
+    MEAS_FREQ_FAST        // Yüksek sıklık (örn. 100 ms)
+} measurement_freq_t;
+
+// Güç ve Zamanlama Parametreleri
+#define MEASURE_INTERVAL_SLOW     10000   // 10 saniye
+#define MEASURE_INTERVAL_MEDIUM   1000    // 1 saniye
+#define MEASURE_INTERVAL_FAST     100     // 100 ms
+#define IDLE_TIMEOUT              30000   // 30 saniye
+
+// Şu anki durum
+power_mode_t current_power_mode = POWER_MODE_SLEEP;
+measurement_freq_t current_meas_freq = MEAS_FREQ_MEDIUM;
+uint32_t last_measurement_time = 0;
+uint32_t last_activity_time = 0;
+
+// Güç modunu ayarla
+void setPowerMode(cell_asic_ *ic, power_mode_t mode) {
+    switch (mode) {
+        case POWER_MODE_SLEEP:
+            // Watchdog zamanlayıcısı zaten sürekli etkin
+            // SLEEP moduna girince tüm cihaz kapanır
+            break;
+            
+        case POWER_MODE_STANDBY:
+            // REFON = 0, referanslar kapalı
+            setCofA_REFON(ic, REF_OFF);
+            break;
+            
+        case POWER_MODE_READY:
+            // REFON = 1, referanslar açık, hızlı ölçüme hazır
+            setCofA_REFON(ic, REF_ON);
+            break;
+            
+        case POWER_MODE_MEASURE:
+            // Ölçüm durumuna otomatik geçiş bir ADC komutu ile olur
+            setCofA_REFON(ic, REF_ON);
+            break;
+    }
+    
+    // Konfigürasyonu uygula (SLEEP hariç)
+    if (mode != POWER_MODE_SLEEP) {
+        createConfigA(ic);
+        ltcWakeUp(1);
+        spiWriteData(ic->ic_address, WRCFGA, ic->ic_register.tx_data);
+    }
+    
+    current_power_mode = mode;
+}
+
+// Ölçüm sıklığını ayarla
+void setMeasurementFrequency(measurement_freq_t freq) {
+    current_meas_freq = freq;
+    last_measurement_time = GET_CURRENT_MS();
+}
+
+// Aktif durum sinyali (kullanıcıdan girdi geldiğinde çağrılır)
+void signalActivity(void) {
+    last_activity_time = GET_CURRENT_MS();
+    
+    // Aktif durum olduğunda hızlı ölçüme geç
+    setMeasurementFrequency(MEAS_FREQ_FAST);
+}
+
+// Ölçüm ihtiyacını kontrol et
+uint8_t needsMeasurement(void) {
+    uint32_t current_time = GET_CURRENT_MS();
+    uint32_t interval;
+    
+    // Ölçüm sıklığına göre aralık belirle
+    switch (current_meas_freq) {
+        case MEAS_FREQ_SLOW:   interval = MEASURE_INTERVAL_SLOW; break;
+        case MEAS_FREQ_MEDIUM: interval = MEASURE_INTERVAL_MEDIUM; break;
+        case MEAS_FREQ_FAST:   interval = MEASURE_INTERVAL_FAST; break;
+        default:               interval = MEASURE_INTERVAL_MEDIUM; break;
+    }
+    
+    // Son ölçümden beri yeterli zaman geçmiş mi kontrol et
+    return (current_time - last_measurement_time) >= interval;
+}
+
+// Boşta kalma süresini kontrol et
+void checkIdleTimeout(void) {
+    uint32_t current_time = GET_CURRENT_MS();
+    
+    // Son aktiviteden beri geçen süre
+    uint32_t idle_time = current_time - last_activity_time;
+    
+    // Boşta kalma süresi aşıldı mı kontrol et
+    if (idle_time >= IDLE_TIMEOUT) {
+        // Zaman aşımı, düşük güç moduna geç
+        setMeasurementFrequency(MEAS_FREQ_SLOW);
+    }
+}
+
+// Hücreleri ölç
+void performMeasurement(cell_asic_ *ic) {
+    // Geçerli moda göre ADC hızını belirle
+    MD adc_mode;
+    switch (current_meas_freq) {
+        case MEAS_FREQ_SLOW:   adc_mode = ADC_26_HZ; break;  // Düşük güç, yüksek hassasiyet
+        case MEAS_FREQ_MEDIUM: adc_mode = ADC_7_KHZ; break;  // Normal hız/hassasiyet dengesi
+        case MEAS_FREQ_FAST:   adc_mode = ADC_27_KHZ; break; // Maksimum hız
+        default:               adc_mode = ADC_7_KHZ; break;
+    }
+    
+    // ADC dönüşümünü başlat
+    ltcADCV(ic->ic_address, adc_mode, DCP_DISABLED, CH_ALL);
+    ltcPollAdc(ic->ic_address);
+    
+    // Ölçüm sonuçlarını oku
+    readCellGroup(ic, ALL_GRP);
+    
+    // Son ölçüm zamanını güncelle
+    last_measurement_time = GET_CURRENT_MS();
+}
+
+// Güç modunu güncelle
+void updatePowerMode(cell_asic_ *ic) {
+    switch (current_power_mode) {
+        case POWER_MODE_SLEEP:
+            // Herhangi bir aktivite olduğunda STANDBY'a geç
+            setPowerMode(ic, POWER_MODE_STANDBY);
+            break;
+            
+        case POWER_MODE_STANDBY:
+            // Ölçüm gerekiyorsa READY'e geç
+            if (needsMeasurement()) {
+                setPowerMode(ic, POWER_MODE_READY);
+            }
+            break;
+            
+        case POWER_MODE_READY:
+            // Ölçüm gerekiyorsa MEASURE'a geç
+            if (needsMeasurement()) {
+                setPowerMode(ic, POWER_MODE_MEASURE);
+                performMeasurement(ic);
+                
+                // Ölçüm bitti, READY durumuna dön
+                setPowerMode(ic, POWER_MODE_READY);
+            }
+            break;
+            
+        case POWER_MODE_MEASURE:
+            // MEASURE durumu geçicidir, ölçüm bitince READY'e dönülür
+            break;
+    }
+}
+
+// Ana güç yönetimi döngüsü
+void managePower(void) {
+    cell_asic_ bms_ic;
+    bms_ic.ic_address = 0x00;
+    
+    // Boşta kalma süresini kontrol et
+    checkIdleTimeout();
+    
+    // Güç modunu güncelle
+    updatePowerMode(&bms_ic);
+}
+            </pre>
+        </section>
+
+        <section id="diagnostics" class="example-section">
+            <h2>Hata Teşhisi ve Raporlama</h2>
+            <p>BMS durumunun izlenmesi ve hata teşhisi.</p>
+            <pre class="code-block">
+/* diagnostics.c - Hata Teşhisi ve Raporlama */
+
+// Hata Kodları
+#define ERROR_NONE              0x00
+#define ERROR_PEC               0x01
+#define ERROR_MUXFAIL           0x02
+#define ERROR_THSD              0x04
+#define ERROR_REF_OUT_OF_RANGE  0x08
+#define ERROR_SOC_MISMATCH      0x10
+#define ERROR_CELL_MISMATCH     0x20
+#define ERROR_OPEN_WIRE         0x40
+#define ERROR_COMMUNICATION     0x80
+
+// Hata Durumu
+typedef struct {
+    uint16_t error_flags;         // Hata bayrakları
+    uint16_t error_count[8];      // Her hata tipi için sayaç
+    uint16_t last_ref_value;      // Son referans değeri
+    uint16_t cell_sum;            // Hücre toplamı
+    uint16_t sc_value;            // SC ölçüm değeri
+} diagnostic_data_t;
+
+diagnostic_data_t diag_data = {0};
+
+// Referans değerinin doğruluğunu kontrol et
+uint8_t checkReferenceVoltage(cell_asic_ *ic) {
+    // 2nd referans değerini oku (VREF2)
+    ltcADAX(ic->ic_address, ADC_7_KHZ, GPIO_2REF);
+    ltcPollAdc(ic->ic_address);
+    
+    uint8_t pecError = 0;
+    ltcWakeUp(1);
+    spiReadData(ic->ic_address, RDCAUXB, ic->ic_register.rx_data, 
+                ic->ic_register.rx_pec, &pecError, 8);
+    
+    if (pecError) {
+        return ERROR_PEC;
+    }
+    
+    parseAuxVoltage(ic, B, ic->ic_register.rx_data);
+    diag_data.last_ref_value = ic->aux.ref;
+    
+    // Referans değeri kontrol aralığı: 2.99V - 3.01V (29900 - 30100)
+    if (diag_data.last_ref_value < 29900 || diag_data.last_ref_value > 30100) {
+        return ERROR_REF_OUT_OF_RANGE;
+    }
+    
+    return ERROR_NONE;
+}
+
+// Hücre toplamı ve SC değerini karşılaştır
+uint8_t checkSumOfCells(cell_asic_ *ic) {
+    // SC ve hücre voltajları ölçümü
+    ltcADCVSC(ic->ic_address, ADC_7_KHZ, DCP_DISABLED);
+    ltcPollAdc(ic->ic_address);
+    
+    uint8_t pecError = 0;
+    
+    // SC değerini oku
+    ltcWakeUp(1);
+    spiReadData(ic->ic_address, RDSTATA, ic->ic_register.rx_data, 
+                ic->ic_register.rx_pec, &pecError, 8);
+    
+    if (pecError) {
+        return ERROR_PEC;
+    }
+    
+    parseStatus(ic, A, ic->ic_register.rx_data);
+    diag_data.sc_value = ic->stata.sc;
+    
+    // Hücre voltajlarını oku
+    readCellGroup(ic, ALL_GRP);
+    
+    // Hücre toplamını hesapla
+    diag_data.cell_sum = 0;
+    for (uint8_t i = 0; i < 12; i++) {
+        diag_data.cell_sum += ic->cell.c_code[i];
+    }
+    
+    // SC değeri ile karşılaştır (SC değeri 20 ile çarpılmış)
+    uint32_t sc_calc = (uint32_t)diag_data.sc_value * 20;
+    uint32_t diff = (sc_calc > diag_data.cell_sum) ? 
+                  (sc_calc - diag_data.cell_sum) : 
+                  (diag_data.cell_sum - sc_calc);
+    
+    // %0.25 tolerans (4 promil)
+    uint32_t tolerance = diag_data.cell_sum / 400;
+    
+    if (diff > tolerance) {
+        return ERROR_SOC_MISMATCH;
+    }
+    
+    return ERROR_NONE;
+}
+
+// Termik kapatma ve MUX hatasını kontrol et
+uint8_t checkStatusFlags(cell_asic_ *ic) {
+    uint8_t pecError = 0;
+    uint8_t error = ERROR_NONE;
+    
+    // Status B registerını oku
+    ltcWakeUp(1);
+    spiReadData(ic->ic_address, RDSTATB, ic->ic_register.rx_data, 
+                ic->ic_register.rx_pec, &pecError, 8);
+    
+    if (pecError) {
+        return ERROR_PEC;
+    }
+    
+    parseStatus(ic, B, ic->ic_register.rx_data);
+    
+    // Termik kapatma durumunu kontrol et
+    if (ic->statb.thsd) {
+        error |= ERROR_THSD;
+    }
+    
+    // MUX hatası durumunu kontrol et
+    if (ic->statb.muxfail) {
+        error |= ERROR_MUXFAIL;
+    }
+    
+    return error;
+}
+
+// Hücre voltaj farkını kontrol et
+uint8_t checkCellBalance(cell_asic_ *ic) {
+    uint16_t min_cell = 0xFFFF;
+    uint16_t max_cell = 0;
+    
+    // Min ve max hücre voltajlarını bul
+    for (uint8_t i = 0; i < 12; i++) {
+        if (ic->cell.c_code[i] < min_cell) {
+            min_cell = ic->cell.c_code[i];
+        }
+        if (ic->cell.c_code[i] > max_cell) {
+            max_cell = ic->cell.c_code[i];
+        }
+    }
+    
+    // Maksimum izin verilen fark: 200mV (2000 birim)
+    if ((max_cell - min_cell) > 2000) {
+        return ERROR_CELL_MISMATCH;
+    }
+    
+    return ERROR_NONE;
+}
+
+// MUX teşhis testini çalıştır
+uint8_t runMuxDiagnostic(cell_asic_ *ic) {
+    uint8_t cmd[2] = {0x07, 0x21};  // DIAGN komutu
+    uint8_t result = 0;
+    
+    // DIAGN komutunu gönder
+    spiSendCmd(cmd);
+    
+    // İşlemin tamamlanmasını bekle
+    ltcPollAdc(ic->ic_address);
+    
+    // Status B registerını oku ve MUXFAIL bayrağını kontrol et
+    uint8_t pecError = 0;
+    ltcWakeUp(1);
+    spiReadData(ic->ic_address, RDSTATB, ic->ic_register.rx_data, 
+                ic->ic_register.rx_pec, &pecError, 8);
+    
+    if (pecError) {
+        return ERROR_PEC;
+    }
+    
+    parseStatus(ic, B, ic->ic_register.rx_data);
+    
+    if (ic->statb.muxfail) {
+        result = ERROR_MUXFAIL;
+    }
+    
+    return result;
+}
+
+// İletişim hatası kontrolü
+uint8_t checkCommunication(cell_asic_ *ic) {
+    uint8_t cmd[2] = {0x07, 0x17};  // CLRCELL komutu
+    uint8_t result = ERROR_NONE;
+    
+    // PEC hatalı bir komut gönder
+    ltcWakeUp(1);
+    ltcCSLow();
+    spiWriteBytes(cmd, 2);  // PEC olmadan gönder
+    ltcCSHigh();
+    
+    // Doğru formatlı bir komut gönder ve cevap alabildiğimizi kontrol et
+    ltcADCV(ic->ic_address, ADC_7_KHZ, DCP_DISABLED, CH_ALL);
+    if (ltcPollAdc(ic->ic_address) == 0) {
+        result = ERROR_COMMUNICATION;
+    }
+    
+    return result;
+}
+
+// Hata sayaçlarını güncelle
+void updateErrorCounters(uint16_t errors) {
+    if (errors & ERROR_PEC)               diag_data.error_count[0]++;
+    if (errors & ERROR_MUXFAIL)           diag_data.error_count[1]++;
+    if (errors & ERROR_THSD)              diag_data.error_count[2]++;
+    if (errors & ERROR_REF_OUT_OF_RANGE)  diag_data.error_count[3]++;
+    if (errors & ERROR_SOC_MISMATCH)      diag_data.error_count[4]++;
+    if (errors & ERROR_CELL_MISMATCH)     diag_data.error_count[5]++;
+    if (errors & ERROR_OPEN_WIRE)         diag_data.error_count[6]++;
+    if (errors & ERROR_COMMUNICATION)     diag_data.error_count[7]++;
+}
+
+// Ana teşhis döngüsü
+void performDiagnostics(void) {
+    cell_asic_ bms_ic;
+    bms_ic.ic_address = 0x00;
+    uint16_t errors = 0;
+    
+    // Referans voltajı kontrolü
+    errors |= checkReferenceVoltage(&bms_ic);
+    
+    // Hücre toplamı kontrolü
+    errors |= checkSumOfCells(&bms_ic);
+    
+    // Status bayrakları kontrolü
+    errors |= checkStatusFlags(&bms_ic);
+    
+    // Hücre dengesizliği kontrolü
+    errors |= checkCellBalance(&bms_ic);
+    
+    // MUX teşhisi
+    errors |= runMuxDiagnostic(&bms_ic);
+    
+    // İletişim testi
+    errors |= checkCommunication(&bms_ic);
+    
+    // Hata bayraklarını güncelle
+    diag_data.error_flags = errors;
+    
+    // Hata sayaçlarını güncelle
+    updateErrorCounters(errors);
+    
+    // Hata durumuna göre işlem yap
+    if (errors != ERROR_NONE) {
+        // Hata durumunu raporla
+        REPORT_ERRORS(errors);
+        
+        // Kritik hatalar varsa güvenli moda geç
+        if (errors & (ERROR_THSD | ERROR_OPEN_WIRE | ERROR_COMMUNICATION)) {
+            ENTER_SAFE_MODE();
+        }
+    }
+}
+            </pre>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 LTC6811 BMS Kütüphanesi</p>
+        </div>
+    </footer>
+</body>
+</html>

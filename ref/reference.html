@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+    <title>LTC6811 Referans</title>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>LTC6811V1R2C BMS Kütüphanesi</h1>
+            <nav>
+                <ul>
+                    <li><a href="index.html">Ana Sayfa</a></li>
+                    <li><a href="examples.html">Örnekler</a></li>
+                    <li><a href="reference.html" class="active">Referans</a></li>
+                    <li><a href="setup.html">Kurulum</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="page-header">
+            <h2>API Referansı</h2>
+            <p>LTC6811 kütüphanesinin fonksiyonları ve veri yapıları</p>
+        </section>
+
+        <section class="reference-navigation">
+            <ul>
+                <li><a href="#init-config">Başlatma ve Yapılandırma</a></li>
+                <li><a href="#adc-commands">ADC Komutları</a></li>
+                <li><a href="#cell-commands">Hücre İşlemleri</a></li>
+                <li><a href="#aux-commands">GPIO ve Yardımcı Fonksiyonlar</a></li>
+                <li><a href="#diagnostic-commands">Diagnostik Fonksiyonlar</a></li>
+                <li><a href="#pwm-discharge">PWM ve Dengeleme</a></li>
+                <li><a href="#spi-interface">SPI Arayüzü</a></li>
+                <li><a href="#data-structures">Veri Yapıları</a></li>
+            </ul>
+        </section>
+
+        <section id="init-config" class="reference-section">
+            <h3>Başlatma ve Yapılandırma</h3>
+            <div class="function-list">
+                <div class="function-item">
+                    <h4>initLTC()</h4>
+                    <p>LTC6811 aygıtını başlatır ve temel yapılandırmaları ayarlar.</p>
+                    <pre class="code-block">void initLTC(void)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>setVoltageThresholds()</h4>
+                    <p>Aşırı ve düşük gerilim eşiklerini ayarlar.</p>
+                    <pre class="code-block">void setVoltageThresholds(cell_asic_ *ic, float uv_voltage, float ov_voltage)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>setCofA_ADCOPT()</h4>
+                    <p>ADC çalışma modunu yapılandırır.</p>
+                    <pre class="code-block">void setCofA_ADCOPT(cell_asic_ *ic, COFA_ADCOPT value)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>setCofA_REFON()</h4>
+                    <p>Referans voltajının durumunu ayarlar.</p>
+                    <pre class="code-block">void setCofA_REFON(cell_asic_ *ic, COFA_REF value)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>configureAdc()</h4>
+                    <p>ADC parametrelerini yapılandırır.</p>
+                    <pre class="code-block">void configureAdc(cell_asic_ *ic, uint8_t adc_option)</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="adc-commands" class="reference-section">
+            <h3>ADC Komutları</h3>
+            <div class="function-list">
+                <div class="function-item">
+                    <h4>ltcADCV()</h4>
+                    <p>Hücre voltaj ölçümünü başlatır.</p>
+                    <pre class="code-block">void ltcADCV(uint8_t tAdress, MD _md, DCP _dcp, CH _ch)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>ltcADOW()</h4>
+                    <p>Açık kablo tespiti ölçümünü başlatır.</p>
+                    <pre class="code-block">void ltcADOW(uint8_t tAdress, MD _md, PUP _pup, CH _ch)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>ltcADAX()</h4>
+                    <p>GPIO ölçümünü başlatır.</p>
+                    <pre class="code-block">void ltcADAX(uint8_t tAdress, MD _md, CHG _chg)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>ltcADCVAX()</h4>
+                    <p>Hücre voltajı ve GPIO1, GPIO2 ölçümünü birlikte başlatır.</p>
+                    <pre class="code-block">void ltcADCVAX(uint8_t tAdress, MD _md, DCP _dcp)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>ltcADCVSC()</h4>
+                    <p>Hücre voltajı ve toplam voltaj ölçümünü başlatır.</p>
+                    <pre class="code-block">void ltcADCVSC(uint8_t tAdress, MD _md, DCP _dcp)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>ltcADSTAT()</h4>
+                    <p>Status register ölçümünü başlatır.</p>
+                    <pre class="code-block">void ltcADSTAT(uint8_t tAdress, MD _md, CHST _chst)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>ltcPollAdc()</h4>
+                    <p>ADC dönüşümünün tamamlanmasını bekler.</p>
+                    <pre class="code-block">uint32_t ltcPollAdc(uint8_t tIC)</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="cell-commands" class="reference-section">
+            <h3>Hücre İşlemleri</h3>
+            <div class="function-list">
+                <div class="function-item">
+                    <h4>readCellVoltages()</h4>
+                    <p>Tüm hücre voltajlarını ölçer ve depolar.</p>
+                    <pre class="code-block">void readCellVoltages(MD _MD, DCP _DCP, CH _CH)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>readCellGroup()</h4>
+                    <p>Belirli bir hücre grubunu okur.</p>
+                    <pre class="code-block">void readCellGroup(cell_asic_ *ic, GRP _group)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>parseCellVoltage()</h4>
+                    <p>ADC register verilerini hücre voltajlarına dönüştürür.</p>
+                    <pre class="code-block">void parseCellVoltage(cell_asic_ *ic, GRP grp, uint8_t *cv_data)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>detectOpenWires()</h4>
+                    <p>Açık kablo bağlantılarını tespit eder.</p>
+                    <pre class="code-block">void detectOpenWires(cell_asic_ *ic)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>checkCellVoltageStatus()</h4>
+                    <p>Hücre voltajlarının durumunu kontrol eder.</p>
+                    <pre class="code-block">void checkCellVoltageStatus(cell_asic_ *ic)</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="aux-commands" class="reference-section">
+            <h3>GPIO ve Yardımcı Fonksiyonlar</h3>
+            <div class="function-list">
+                <div class="function-item">
+                    <h4>readAuxVoltages()</h4>
+                    <p>GPIO ve referans voltajlarını okur.</p>
+                    <pre class="code-block">void readAuxVoltages(MD _MD, CHG _CHG)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>readAuxGroup()</h4>
+                    <p>Belirli bir GPIO grubunu okur.</p>
+                    <pre class="code-block">void readAuxGroup(cell_asic_ *ic, GRP _group)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>parseAuxVoltage()</h4>
+                    <p>ADC register verilerini GPIO voltajlarına dönüştürür.</p>
+                    <pre class="code-block">void parseAuxVoltage(cell_asic_ *ic, GRP grp, uint8_t *aux_data)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>setAllGPIO()</h4>
+                    <p>Tüm GPIO pinlerinin durumunu ayarlar.</p>
+                    <pre class="code-block">void setAllGPIO(cell_asic_ *ic, uint8_t value)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>calculateTemperature()</h4>
+                    <p>ADC değerinden sıcaklık hesaplar.</p>
+                    <pre class="code-block">float calculateTemperature(uint16_t adc_value)</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="diagnostic-commands" class="reference-section">
+            <h3>Diagnostik Fonksiyonlar</h3>
+            <div class="function-list">
+                <div class="function-item">
+                    <h4>readStatusRegisters()</h4>
+                    <p>Tüm durum registerlarını okur.</p>
+                    <pre class="code-block">void readStatusRegisters(void)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>readStatusRegisterGroup()</h4>
+                    <p>Belirli bir durum register grubunu okur.</p>
+                    <pre class="code-block">void readStatusRegisterGroup(cell_asic_ *ic, GRP _group)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>parseStatus()</h4>
+                    <p>Register verilerini durum verilerine dönüştürür.</p>
+                    <pre class="code-block">void parseStatus(cell_asic_ *ic, GRP grp, uint8_t *stat_data)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>ltcDIAGN()</h4>
+                    <p>Mux diagnostik testini çalıştırır.</p>
+                    <pre class="code-block">void ltcDIAGN(uint8_t tAdress)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>checkReferenceVoltage()</h4>
+                    <p>Referans voltajının doğruluğunu kontrol eder.</p>
+                    <pre class="code-block">uint8_t checkReferenceVoltage(cell_asic_ *ic)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>checkSumOfCells()</h4>
+                    <p>Hücre voltaj toplamını ve SC değerini karşılaştırır.</p>
+                    <pre class="code-block">uint8_t checkSumOfCells(cell_asic_ *ic)</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="pwm-discharge" class="reference-section">
+            <h3>PWM ve Dengeleme</h3>
+            <div class="function-list">
+                <div class="function-item">
+                    <h4>writePWMDischarge()</h4>
+                    <p>PWM değerlerini LTC6811'e yazar.</p>
+                    <pre class="code-block">void writePWMDischarge(void)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>setDCCBits()</h4>
+                    <p>Discharge kontrol bitlerini ayarlar.</p>
+                    <pre class="code-block">void setDCCBits(uint8_t target_ic, uint8_t index, uint8_t state)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>setDischarges()</h4>
+                    <p>Discharge durumlarını LTC6811'e uygular.</p>
+                    <pre class="code-block">void setDischarges(void)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>setCellDischarge()</h4>
+                    <p>Belirli bir hücrenin discharge durumunu ayarlar.</p>
+                    <pre class="code-block">void setCellDischarge(cell_asic_ *ic, uint8_t cell, uint8_t state)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>createPWM()</h4>
+                    <p>PWM register verilerini oluşturur.</p>
+                    <pre class="code-block">void createPWM(cell_asic_ *ic)</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="spi-interface" class="reference-section">
+            <h3>SPI Arayüzü</h3>
+            <div class="function-list">
+                <div class="function-item">
+                    <h4>spiSendCmd()</h4>
+                    <p>SPI üzerinden komut gönderir.</p>
+                    <pre class="code-block">void spiSendCmd(uint8_t tx_cmd[2])</pre>
+                </div>
+                <div class="function-item">
+                    <h4>spiSendwACmd()</h4>
+                    <p>Adresli komut gönderir.</p>
+                    <pre class="code-block">void spiSendwACmd(uint8_t tx_cmd[2], uint8_t addr)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>spiReadData()</h4>
+                    <p>SPI üzerinden veri okur.</p>
+                    <pre class="code-block">void spiReadData(uint8_t addr, uint8_t tx_cmd[2], uint8_t *rx_data, uint8_t *rx_pec, uint8_t *pec_error, uint8_t regLength)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>spiWriteData()</h4>
+                    <p>SPI üzerinden veri yazar.</p>
+                    <pre class="code-block">void spiWriteData(uint8_t addr, uint8_t tx_cmd[2], uint8_t *tx_data)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>ltcWakeUp()</h4>
+                    <p>LTC6811 cihazını uyandırır.</p>
+                    <pre class="code-block">void ltcWakeUp(uint8_t total_ic)</pre>
+                </div>
+                <div class="function-item">
+                    <h4>getPec15()</h4>
+                    <p>PEC hesaplaması yapar.</p>
+                    <pre class="code-block">uint16_t getPec15(uint8_t *data, uint8_t len)</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="data-structures" class="reference-section">
+            <h3>Veri Yapıları</h3>
+            <div class="data-structure-list">
+                <div class="data-structure-item">
+                    <h4>cell_asic_</h4>
+                    <p>LTC6811 cihazının tüm verilerini içeren ana yapı.</p>
+                    <pre class="code-block">typedef struct {
+    uint8_t ic_address;
+    cofa_ tx_cfga;
+    cofa_ rx_cfga;
+    cv_ cell;
+    aux_ aux;
+    sta_ stata;
+    stb_ statb;
+    sctrl_ sctrl;
+    pwm_ pwm;
+    ic_register_ ic_register;
+} cell_asic_;</pre>
+                </div>
+                <div class="data-structure-item">
+                    <h4>cv_</h4>
+                    <p>Hücre voltaj verilerini tutar.</p>
+                    <pre class="code-block">typedef struct {
+    uint16_t c_code[12];
+} cv_;</pre>
+                </div>
+                <div class="data-structure-item">
+                    <h4>aux_</h4>
+                    <p>GPIO ve referans voltaj verilerini tutar.</p>
+                    <pre class="code-block">typedef struct {
+    uint16_t a_code[5];
+    uint16_t ref;
+} aux_;</pre>
+                </div>
+                <div class="data-structure-item">
+                    <h4>sta_</h4>
+                    <p>Status A register verilerini tutar.</p>
+                    <pre class="code-block">typedef struct {
+    uint16_t sc;
+    uint16_t itmp;
+    uint16_t va;
+} sta_;</pre>
+                </div>
+                <div class="data-structure-item">
+                    <h4>stb_</h4>
+                    <p>Status B register verilerini tutar.</p>
+                    <pre class="code-block">typedef struct {
+    uint16_t vd;
+    uint8_t c_ov[12];
+    uint8_t c_uv[12];
+    uint8_t thsd : 1;
+    uint8_t muxfail : 1;
+    uint8_t rsvd : 2;
+    uint8_t rev : 4;
+} stb_;</pre>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 LTC6811 BMS Kütüphanesi</p>
+        </div>
+    </footer>
+</body>
+</html>

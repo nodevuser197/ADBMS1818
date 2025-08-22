@@ -18,4 +18,22 @@ static inline HAL_StatusTypeDef
 HAL_SPI_Receive(SPI_HandleTypeDef *h, uint8_t *d, uint16_t sz, uint32_t t)
     { (void)h; (void)d; (void)sz; (void)t; return HAL_OK; }
 
+/* Interrupt-mode transfers (completion signalled via HAL_SPI_*CpltCallback). */
+static inline HAL_StatusTypeDef
+HAL_SPI_Transmit_IT(SPI_HandleTypeDef *h, uint8_t *d, uint16_t sz)
+    { (void)h; (void)d; (void)sz; return HAL_OK; }
+
+static inline HAL_StatusTypeDef
+HAL_SPI_Receive_IT(SPI_HandleTypeDef *h, uint8_t *d, uint16_t sz)
+    { (void)h; (void)d; (void)sz; return HAL_OK; }
+
+/* DMA-mode transfers. */
+static inline HAL_StatusTypeDef
+HAL_SPI_Transmit_DMA(SPI_HandleTypeDef *h, uint8_t *d, uint16_t sz)
+    { (void)h; (void)d; (void)sz; return HAL_OK; }
+
+static inline HAL_StatusTypeDef
+HAL_SPI_Receive_DMA(SPI_HandleTypeDef *h, uint8_t *d, uint16_t sz)
+    { (void)h; (void)d; (void)sz; return HAL_OK; }
+
 #endif /* STUB_STM32G4XX_HAL_SPI_H */

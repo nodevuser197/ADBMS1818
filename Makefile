@@ -16,9 +16,12 @@ CFLAGS = -Wall -Wextra -Wno-unused-parameter -std=c11 -c \
          -Ici/stubs -Ilib/inc -Iprog/inc
 
 SRCS = lib/src/commHelper.c  \
+       lib/src/commNb.c       \
+       lib/src/adbmsTiming.c  \
        lib/src/genericType.c  \
        lib/src/parseCreate.c  \
-       prog/src/wrapper.c
+       prog/src/wrapper.c     \
+       prog/src/wrapperNb.c
 
 BUILD = build
 OBJS  = $(patsubst %.c,$(BUILD)/%.o,$(SRCS))

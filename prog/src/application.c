@@ -728,5 +728,57 @@ void startComm(void)
  *       }
  *   }
  *
+ * ── Template: NON-BLOCKING COMM (commNb engine) ──────────────────────────
+ *
+ * The blocking helpers above stall the CPU inside each SPI transfer.  For an
+ * interrupt/DMA-driven flow use the commNb engine (commNb.h + wrapperNb.h).
+ *
+ *   1. Init once (transfer mode chosen here — IT / DMA / BLOCKING):
+ *
+ *        commNb_stm32_init(&hspi1, GPIOD, GPIO_PIN_2, COMM_NB_MODE_IT);
+ *
+ *   2. Provide a frame builder.  It fills ic->comm for the next frame and
+ *      returns how many frames remain after it.  Example: read N bytes from
+ *      an SPI device, 3 bytes per frame.
+ *
+ *        typedef struct { uint8_t *out; uint8_t total, done; } SpiRead;
+ *
+ *        static uint8_t spiReadFrames(cell_asic_ *ic, uint8_t tIC,
+ *                                     uint8_t frame, uint8_t *needs_rd,
+ *                                     void *ud) {
+ *            SpiRead *s = (SpiRead *)ud;
+ *            if (frame > 0)                       // collect previous frame
+ *                for (uint8_t i = 0; i < 3 && s->done < s->total; i++)
+ *                    s->out[s->done++] = ic[0].comm.data[i];
+ *            uint8_t left = s->total - s->done;
+ *            uint8_t chunk = left > 3 ? 3 : left;
+ *            comm_spi_read_cont(&ic[0].comm, chunk, (left <= 3));
+ *            *needs_rd = 1;                        // this frame reads back
+ *            return (left > 3) ? 1 : 0;            // more frames?
+ *        }
+ *
+ *        static void readDone(CommNbStatus st, void *ud) {
+ *            // st == COMM_NB_OK → s->out is filled; resume your task here
+ *        }
+ *
+ *   3. Kick it off and return — completion arrives via readDone():
+ *
+ *        SpiRead job = { my_buffer, 8, 0 };
+ *        CommNbCtx ctx = { bms_ic, 1, spiReadFrames, readDone, &job };
+ *        commNb_Start(&ctx);          // returns immediately in IT/DMA mode
+ *
+ *   4. Forward the SPI ISR (only if COMM_NB_DEFINE_CALLBACKS==0; otherwise
+ *      wrapperNb.c already defines these):
+ *
+ *        void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *h){ commNb_OnTxDone(); }
+ *        void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *h){ commNb_OnRxDone(); }
+ *
+ * ── Timing helpers (adbmsTiming.h) ───────────────────────────────────────
+ *   Replace magic HAL_Delay() numbers with datasheet-grounded values:
+ *
+ *     uint32_t conv = adbms_adcvTime_us(ADC_7_KHZ, 0);   // 2488 µs
+ *     uint32_t wait = adbms_pollWait_us(conv, from_standby);
+ *     uint32_t wake = adbms_wakeTime_us(TOTAL_IC, ADBMS_FROM_SLEEP);
+ *
  * ─────────────────────────────────────────────────────────────────────────
  */
